@@ -1,0 +1,1369 @@
+---
+title: "OVEX Data Analysis"
+author: "Alex Handzel"
+date: "1/12/2022"
+output: html_document
+---
+
+Libraries Imported
+
+```{r}
+library(readr)
+library(ggplot2)
+library(car)
+library(dplyr)
+library(tidyr)
+library(data.table)
+library(vegan)
+library(tidyverse)
+library(ggpubr)
+library(pairwiseAdonis)
+library(usedist)
+#library(phangorn)
+library(multcomp)
+library(randomForest)
+library(mcp)
+library(emmeans)
+library(nlme)
+library(caret)
+library(umap)
+```
+
+
+Alpha Diversity Analysis: Faiths PD
+
+
+```{r}
+#Importing Alpha Diversity Data from Qiime2
+alpha <- read_csv("ovexalphadiversity.csv")
+#head(alpha)
+
+#Checking Faith's PD for normality and heteroscedasticity
+##Slightly Skewed
+##Slight heteroscedasticity, need to transform the data. 
+#hist(alpha$faith_pd)
+#qqnorm(alpha$faith_pd); qqline(alpha$faith_pd)
+
+#Log Transformation was used to normalize data
+alpha$faith_log = log(alpha$faith_pd)
+#alpha
+#hist(alpha$faith_log)
+#qqnorm(alpha$faith_log);qqline(alpha$faith_log)
+
+#BoxPlot Faith PD by treatment type with time as a color
+Week <- as.factor(alpha$Time)
+faith <- ggplot(alpha, aes(x=Treatment, y=faith_log, fill=Week)) + 
+  geom_boxplot()+
+  theme_classic()+
+  ylab("Faith's Phylogenetic Diversity")+
+  ggtitle("Faith's PD by Treatment")
+
+faith
+
+#Scatter plot (R2 and p-value)
+scatt_faith = ggplot(alpha, aes(x=Time, y=faith_log))+
+  geom_point()+
+  theme_classic()+
+  geom_smooth(method=lm, se=FALSE)+
+  facet_grid(~Treatment)+
+  stat_cor(aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")),label.y = 3)+
+  ylab("Faith's Phylogenetic Diversity")+
+  xlab("Week")
+  ggtitle("Faith's PD by Treatment")
+
+scatt_faith
+
+#Linear Mixed model with mice as a random effect
+alt_model <- lme(faith_log ~ Treatment + Time, random = ~ 1 | Actual.Contents, data = alpha, method = 'ML')
+anova(alt_model)
+
+```
+
+Alpha Diversity Analysis: Pielou's Evenness
+
+```{r}
+#Checking Pielou Evenness for normality and heteroscedasticity
+##Skewed to the left
+##Heteroscedasticity, need to transform the data. 
+#hist(alpha$pielou_evenness)
+#qqnorm(alpha$pielou_evenness); qqline(alpha$pielou_evenness)
+
+#Normalizing the data as much as possible
+alpha$evenness_scale = scale(alpha$pielou_evenness, center = TRUE)
+#hist(evenness)
+#qqnorm(evenness);qqline(evenness)
+
+#BoxPlot Evenness by treatment type with time as a color
+Week <- as.factor(alpha$Time)
+even <- ggplot(alpha, aes(x=Treatment, y=evenness_scale, fill=Week)) + 
+  geom_boxplot()+
+  theme_classic()+
+  ylab("Evenness")+
+  ggtitle("Evenness by Treatment")
+
+even
+
+#Scatter plot (R2 and p-value)
+scatt_even = ggplot(alpha, aes(x=Time, y=evenness_scale))+
+  geom_point()+
+  theme_classic()+
+  geom_smooth(method=lm, se=FALSE)+
+  facet_grid(~Treatment)+
+  stat_cor(aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")),label.y = 3)+
+  ylab("Evenness")+
+  xlab("Week")
+  ggtitle("Evenness by Treatment")
+
+scatt_even
+
+
+lmm_even = lme(evenness_scale ~ Treatment + Time, random = ~1| Actual.Contents, data = alpha)
+summary(lmm_even)
+
+```
+
+Beta Diversity Analysis:
+
+
+Imported Files/Data Cleaning
+
+
+```{r}
+#Importing Data Files
+
+#Code for grouped taxa DO NOT REMOVE may need for later(dont have to change any code)
+#zerofiltOTUa <- read.csv('out1.csv',
+                     #header = TRUE, row.names = 1)
+#zerofiltOTUa
+taxa = read.table('taxa.tsv', sep = '\t', header = T, check.names = F)
+
+
+OTUtableA <- read.csv('./biomtxt/table.from_biom.tsv',
+                     sep = '\t',header = T, row.names = 1,
+                     check.names = F)
+#head(OTUtableA)
+
+
+tftabA<-OTUtableA==0
+tftabA[,1]
+tftabA[tftabA] <- 1
+tftabA[tftabA==F] <- 0
+
+#from python code
+CUTOFF <- 246.65
+sum(rowSums(tftabA)>CUTOFF)
+sum(rowSums(tftabA)<CUTOFF)
+
+#head(OTUtableA)
+#dim(OTUtableA)
+zerofiltOTUa <- OTUtableA[rowSums(tftabA)<CUTOFF,]
+#head(zerofiltOTUa)
+#dim(zerofiltOTUa)
+
+
+sequencekey <- read.csv('sequencingkey1.tsv',
+                     sep = '\t',header = T)
+
+
+#Sequencing Key data clean up:
+#1) Sample ID changed from 56 to X56
+#2) Removed columns that add no value to data analysis
+#3) Convert Treatment and Time to factors
+sequencekey$SampleID = sub("^", "X", sequencekey$SampleID)
+sequencekey = subset(sequencekey, select = -c(BarcodeSequence, LinkerPrimerSequence, Plate, Well, Primer, Cage))
+sequencekey$Treatment = as.factor(sequencekey$Treatment)
+sequencekey$Time = as.factor(sequencekey$Time)
+sequencekey$Actual.Contents = as.factor(sequencekey$Actual.Contents)
+
+#Removing bad samples and controls from the sequencing key
+new_sequecingkey=sequencekey %>%
+  filter(!SampleID == 'X56', !SampleID == 'X57',!SampleID == 'X58',!SampleID == 'X249',!SampleID == 'X250',!SampleID == 'X251', !SampleID == 'X252',!SampleID == 'X253', !SampleID == 'X20', !SampleID == 'X24',!SampleID == 'X27', !SampleID == 'X51',!SampleID == 'X74', !SampleID == 'X149', !SampleID == 'X179', !SampleID == 'X200', !SampleID == 'X242')
+
+```
+
+
+Zero Replacement and CLR Transformation
+
+
+```{r}
+#Zero Replacement
+zerofiltOTUa[zerofiltOTUa == 0] = 0.05
+
+#CLR Transformation Function
+clr = function(x) sweep(log(x), 1, rowMeans(log(x)), "-")
+zerofiltOTUa
+#Transpose dataframe, perform the CLR transformation, transpose back
+bacteria_tx = data.frame(t(clr(t(zerofiltOTUa))))
+
+#Removing control Samples/bad samples(Large Percentage of Unknown bacteria)
+#Cannot remove bad/control samples until after CLR transformation: will change the row means and affect the data
+bacteria_tx = subset(bacteria_tx, select = -c(`X56`, `X57`, `X58`, `X249`, `X250`, `X251`, `X252`, `X253`, `X20`, `X24`, `X27`, `X51`, `X74`, `X149`, `X179`, `X200`, `X242`))
+
+
+bacteria_tx
+#bacteria_new = tibble::rownames_to_column(bacteria_tx, "OTUID")
+
+```
+
+Random Forest Feature Selection
+
+```{r}
+bacteria_new = data.frame(t(bacteria_tx))
+time_zero_names = c("X1", "X2", "X3", "X11", "X12", "X13", "X14", "X15", "X16", "X17",
+                    "X18", "X19", "X21", "X22", "X23", "X25", "X26","X28","X29","X30",
+                    "X31","X32","X33","X34","X35","X36","X37","X38","X39","X40",
+                    "X41","X42","X43","X44","X45","X46","X257")
+bact_rf = bacteria_new[!(row.names(bacteria_new) %in% time_zero_names),]
+
+new_sequecingkey1 = data.frame(new_sequecingkey, row.names = 1)
+rf.data = merge(bact_rf, new_sequecingkey1, by=0)
+rf.data$Time = droplevels(rf.data$Time)
+rf.data$Treatment = droplevels(rf.data$Treatment)
+rf.data = data.frame(rf.data, row.names = 1)
+rf.data = subset(rf.data, select = -c(`Time`, `Actual.Contents`))
+rf.data
+
+#RandomForest
+set.seed(42)
+erie.classify <- randomForest(Treatment ~ ., data=rf.data, importance=TRUE, scale=FALSE)
+
+#Creating dataframe of importance 
+impo = data.frame(importance(erie.classify))
+
+#Sorting by decreasing mean gini
+impo = impo[order((impo$MeanDecreaseGini),decreasing=TRUE),]
+
+#Selecting top n names for use in differential taxa analysis
+names_rf = impo %>% rownames_to_column() %>% top_n(50, MeanDecreaseGini) %>% pull(rowname)
+names_rf
+
+
+
+
+
+```
+
+NMDS Analysis Using Euclidean Distance:
+
+```{r}
+#NMDS
+bact_m = as.matrix(t(bacteria_tx))
+Bact_nmds = metaMDS(bact_m, distance = "euclidean")
+bact_scores = as.data.frame(scores(Bact_nmds, display = 'sites'))
+
+
+#Merging Sequencing key to nmds scores. 
+bact_scores = cbind(SampleID = rownames(bact_scores), bact_scores)
+rownames(bact_scores)<-1:nrow(bact_scores)
+
+merged_nmds = merge(bact_scores, sequencekey, by="SampleID")
+merged_nmds$Time = as.factor(merged_nmds$Time)
+
+```
+
+Plotting NMDS Without time zero
+
+```{r}
+#Plotting without time zero, color based on treatment 
+not0 = subset(merged_nmds, Time !=0)
+head(not0)
+
+T_no0 = ggplot(data = not0) +
+  geom_point(aes(x = NMDS1, y = NMDS2, color = Treatment))+
+  #stat_ellipse(aes(x = NMDS1, y = NMDS2,color = Treatment))+
+  ylim(-17, 17)+
+  xlim(-17, 17)+
+  ggtitle("NMDS plot Excluding Time Zero")+
+  theme(plot.title = element_text(hjust = 0.5))
+T_no0
+
+```
+
+Plotting NMDS and separating plots based on time points
+
+```{r}
+
+#Separating data based on Time points
+t0 = subset(merged_nmds, Time == 0)
+t1 = subset(merged_nmds, Time == 1)
+t2 = subset(merged_nmds, Time == 2)
+t3 = subset(merged_nmds, Time == 3)
+t4 = subset(merged_nmds, Time == 4)
+t5 = subset(merged_nmds, Time == 5)
+
+
+#Plotting Individual Time points and colored by Treatment
+T_0 = ggplot(data = t0) +
+  geom_point(aes(x = NMDS1, y = NMDS2, color = Treatment, size = 1))+
+  #stat_ellipse(aes(x = NMDS1, y = NMDS2,color = Treatment))+  
+  xlim(-125, 75)+
+  ylim(-70, 60)+
+  ggtitle("Week 0")+
+  theme(plot.title = element_text(hjust = 0.5))
+T_0
+
+T_1 = ggplot(data = t1) +
+  geom_point(aes(x = NMDS1, y = NMDS2, color = Treatment, size = 1))+
+  #stat_ellipse(aes(x = NMDS1, y = NMDS2,color = Treatment))+
+  xlim(-125, 75)+
+  ylim(-70, 60)+
+  ggtitle("Week 1")+
+  theme(plot.title = element_text(hjust = 0.5))
+T_1
+
+T_2 = ggplot(data = t2) +
+  geom_point(aes(x = NMDS1, y = NMDS2, color = Treatment, size = 1))+
+  #stat_ellipse(aes(x = NMDS1, y = NMDS2,color = Treatment))+
+  xlim(-125, 75)+
+  ylim(-70, 60)+
+  ggtitle("Week 2")+
+  theme(plot.title = element_text(hjust = 0.5))
+T_2
+
+T_3 = ggplot(data = t3) +
+  geom_point(aes(x = NMDS1, y = NMDS2, color = Treatment, size = 1))+
+  #stat_ellipse(aes(x = NMDS1, y = NMDS2,color = Treatment))+
+  xlim(-125, 75)+
+  ylim(-70, 60)+
+  ggtitle("Week 3")+
+  theme(plot.title = element_text(hjust = 0.5))
+T_3
+
+T_4 = ggplot(data = t4) +
+  geom_point(aes(x = NMDS1, y = NMDS2, color = Treatment, size = 1))+
+  #stat_ellipse(aes(x = NMDS1, y = NMDS2,color = Treatment))+
+  xlim(-125, 75)+
+  ylim(-70, 60)+
+  ggtitle("Week 4")+
+  theme(plot.title = element_text(hjust = 0.5))
+T_4
+
+T_5 = ggplot(data = t5) +
+  geom_point(aes(x = NMDS1, y = NMDS2, color = Treatment, size=1))+
+  #stat_ellipse(aes(x = NMDS1, y = NMDS2,color = Treatment))+
+  xlim(-125, 75)+
+  ylim(-70, 60)+
+  ggtitle("Week 5")+
+  theme(plot.title = element_text(hjust = 0.5))
+T_5
+
+NMDS_figure = ggpubr::ggarrange(T_0,T_1,T_2,T_3,T_4,T_5, ncol = 2,nrow=3,labels = c("A", "B", "C", "D", "E", "F"))
+NMDS_figure
+#Get rid of title, size one get rid of 
+#Size of points to large 
+
+```
+
+
+Permanova on all Euclidean Distances
+
+
+```{r}
+
+#Permanova:
+bact_dist = vegdist(bact_m, method = 'euclidian')
+
+##Pairwise beta diversity between groups
+#mod = betadisper(bact_dist,group = new_sequecingkey$Treatment)
+#anova(mod)
+#pmod = permutest(mod, permutations = 1, pairwise = TRUE)
+#distMC = with(mod, dist(centroids))
+#dfdistbw = dist2list(distMC)
+#dfdistbw<-dfdistbw%>%unite(comps,col:row,sep='-')
+#barplot(height=dfdistbw$value,names=dfdistbw$comps,
+        #ylab = 'Distance of both groups to eachothers centoriod')
+#plot(mod)
+
+bact_perm_treat = adonis2(bact_dist~Treatment*Time, data = new_sequecingkey, permutations = 999, method = 'euclidian')
+bact_perm_treat
+
+bact_dist = vegdist(bact_m, method = 'euclidian')
+bact_perm_time = adonis2(bact_dist~Treatment, data = new_sequecingkey, permutations = 999, method = 'euclidian')
+bact_perm_time
+
+#Pairwise Permanova
+pairwise.adonis2(bact_dist~Treatment, data = new_sequecingkey, permutations = 999, method = 'euclidian')
+
+```
+
+
+Week 0 Analysis: 
+1) Permanova
+2) Ad Hoc Pairwise Analysis
+3) Beta-Dispersion 
+
+```{r}
+#install_github("pmartinezarbizu/pairwiseAdonis/pairwiseAdonis")
+#time = 0 Permanova
+bacteria_time0 = subset(bacteria_tx, select = c(`X1`, `X2`, `X3`, `X11`, `X12`, `X13`, `X14`, `X15`, `X16`, `X17`, 
+                                             `X18`, `X19`, `X21`, `X22`, `X23`, `X25`, `X26`,`X28`,`X29`,`X30`,
+                                             `X31`,`X32`,`X33`,`X34`,`X35`,`X36`,`X37`,`X38`,`X39`,`X40`,
+                                             `X41`,`X42`,`X43`,`X44`,`X45`,`X46`,`X257`))
+sequencingkey_time0=new_sequecingkey %>%
+  filter(Time == 0)
+sequencingkey_time0
+#head(sequencingkey_time0)
+
+#transposing and making it a matrix
+bact_m_time0 = as.matrix(t(bacteria_time0))
+bact_dist_time0 = vegdist(bact_m_time0, method = 'euclidian')
+
+#1) Permanova
+bact_perm_time0=adonis2(bact_dist_time0~Treatment, data = sequencingkey_time0, permutations = 9999, method = 'euclidian')
+bact_perm_time0
+
+#2) Ad Hoc Pairwise Analysis
+pairwise_bac_time0 = pairwise.adonis2(bact_dist_time0~Treatment, data = sequencingkey_time0, method = 'euclidian')
+pairwise_bac_time0
+
+#3) Beta-dispersion: Distance from centroid of Group
+#Calculating Beta-dispersion Distance from centroiod of Group)
+bact_betadist_treat0 = betadisper(bact_dist_time0, group = sequencingkey_time0$Treatment)
+distances_microbe_treat0 = data.frame(bact_betadist_treat0[['distances']])
+distances_microbe_treat0 = cbind(distances_microbe_treat0, group = sequencingkey_time0$Treatment)
+colnames(distances_microbe_treat0) = c('Distance_to_Centroid', 'Treatment')
+#head(distances_microbe_treat0)
+
+#Permutation test for homogeneity of Multivariate dispesions
+test_bact_betadist_treatment0 = permutest(bact_betadist_treat0)
+test_bact_betadist_treatment0
+
+#Graphing Beta dispersions
+B_Treat0 <- ggboxplot(data = distances_microbe_treat0, x = "Treatment", y = "Distance_to_Centroid" ) +
+theme_classic() +
+geom_point()
+B_Treat0
+
+#UPGMA
+tree = upgma(bact_dist_time0)
+tree
+plot(tree)
+plot
+
+#UMAP
+umap_analysis = data.frame(t(bacteria_time0))
+umap_analysis
+
+umap_key = data.frame(new_sequecingkey, row.names = 1)
+umap_key = subset(umap_key, select = c(Treatment))
+umap_key$Treatment = droplevels(umap_key$Treatment)
+
+bac.umap = umap(umap_analysis)
+umap_df = data.frame(x = bac.umap$layout[,1],
+                     y = bac.umap$layout[,2])
+
+umap_df = merge(umap_df, umap_key, by=0)
+
+ggplot(umap_df, aes(x, y, colour = Treatment))+
+  geom_point()
+```
+
+Week 1 Analysis: 
+1) Permanova
+2) Ad Hoc Pairwise Analysis
+3) Beta-Dispersion 
+
+```{r}
+
+#time = 1 Permanova
+bacteria_time1 = subset(bacteria_tx, select = c(`X4`, `X5`, `X6`, `X47`, `X48`, `X49`, `X50`, `X52`, `X53`, 
+                                             `X54`, `X55`, `X59`, `X60`, `X61`, `X62`, `X63`,`X64`,`X65`,`X66`,
+                                             `X67`,`X68`,`X69`,`X70`,`X71`,`X72`,`X73`,`X75`,`X76`,`X77`,
+                                             `X78`,`X79`,`X80`,`X81`,`X82`,`X83`,`X84`,`X85`,`X85`))
+#dim(bacteria_time1)
+sequencingkey_time1=new_sequecingkey %>%
+  filter(Time == 1)
+
+
+#transposing and making it a matrix
+bact_m_time1 = as.matrix(t(bacteria_time1))
+bact_dist_time1 = vegdist(bact_m_time1, method = 'euclidian')
+
+#1) Permanova
+bact_perm_time1=adonis2(bact_dist_time1~Treatment, data = sequencingkey_time1, permutations = 9999, method = 'euclidian')
+bact_perm_time1
+
+#2) Ad Hoc Pairwise Analysis
+pairwise_bac_time1 = pairwise.adonis2(bact_dist_time1~Treatment, data = sequencingkey_time1, permutations = 9999, method = 'euclidian')
+pairwise_bac_time1
+
+#3) Beta-dispersion: Distance from centroid of Group
+#Calculating Beta-dispersion Distance from centroiod of Group)
+bact_betadist_treat1 = betadisper(bact_dist_time1, group = sequencingkey_time1$Treatment)
+distances_microbe_treat1 = data.frame(bact_betadist_treat1[['distances']])
+distances_microbe_treat1 = cbind(distances_microbe_treat1, group = sequencingkey_time1$Treatment)
+colnames(distances_microbe_treat1) = c('Distance_to_Centroid', 'Treatment')
+#head(distances_microbe_treat1)
+
+#Permutation test for homogeneity of Multivariate dispesions
+test_bact_betadist_treatment1 = permutest(bact_betadist_treat1)
+test_bact_betadist_treatment1
+
+#Graphing Beta dispersions
+B_Treat1 <- ggboxplot(data = distances_microbe_treat1, x = "Treatment", y = "Distance_to_Centroid" ) +
+theme_classic() +
+geom_point()
+B_Treat1
+
+#UMAP
+umap_analysis = data.frame(t(bacteria_time1))
+umap_analysis
+
+bac.umap = umap(umap_analysis)
+umap_df = data.frame(x = bac.umap$layout[,1],
+                     y = bac.umap$layout[,2])
+
+umap_df = merge(umap_df, umap_key, by=0)
+
+ggplot(umap_df, aes(x, y, colour = Treatment))+
+  geom_point()
+```
+
+Week 2 Analysis: 
+1) Permanova
+2) Ad Hoc Pairwise Analysis
+3) Beta-Dispersion 
+
+```{r}
+
+
+bacteria_time2 = subset(bacteria_tx, select = c(`X7`, `X8`, `X87`, `X88`, `X89`, `X90`, `X91`, `X92`, `X93`, 
+                                             `X94`, `X95`, `X96`, `X97`, `X99`, `X100`, `X101`,`X102`,`X103`,`X104`,
+                                             `X105`,`X106`,`X107`,`X108`,`X109`,`X110`,`X111`,`X112`,`X113`,`X114`,
+                                             `X115`,`X116`,`X117`,`X118`,`X119`,`X120`,`X121`,`X122`,`X125`, `X248`, `X255`))
+
+sequencingkey_time2=new_sequecingkey %>%
+  filter(Time == 2)
+
+
+#transposing and making it a matrix
+bact_m_time2 = as.matrix(t(bacteria_time2))
+bact_dist_time2 = vegdist(bact_m_time2, method = 'euclidian')
+
+#1) Permanova
+bact_perm_time2=adonis2(bact_dist_time2~Treatment, data = sequencingkey_time2, permutations = 9999, method = 'euclidian')
+bact_perm_time2
+
+#2) Ad Hoc Pairwise Analysis
+pairwise_bac_time2 = pairwise.adonis2(bact_dist_time2~Treatment, data = sequencingkey_time2, permutations = 9999, method = 'euclidian')
+pairwise_bac_time2
+
+#3) Beta-dispersion: Distance from centroid of Group
+#Calculating Beta-dispersion Distance from centroid of Group)
+bact_betadist_treat2 = betadisper(bact_dist_time2, group = sequencingkey_time2$Treatment)
+distances_microbe_treat2 = data.frame(bact_betadist_treat2[['distances']])
+distances_microbe_treat2 = cbind(distances_microbe_treat2, group = sequencingkey_time2$Treatment)
+colnames(distances_microbe_treat2) = c('Distance_to_Centroid', 'Treatment')
+#head(distances_microbe_treat2)
+
+#Permutation test for homogeneity of Multivariate dispersion
+test_bact_betadist_treatment2 = permutest(bact_betadist_treat2)
+test_bact_betadist_treatment2
+
+#Graphing Beta dispersions
+B_Treat2 <- ggboxplot(data = distances_microbe_treat2, x = "Treatment", y = "Distance_to_Centroid" ) +
+theme_classic() +
+geom_point()
+B_Treat2
+
+#UMAP
+umap_analysis = data.frame(t(bacteria_time2))
+umap_analysis
+
+bac.umap = umap(umap_analysis)
+umap_df = data.frame(x = bac.umap$layout[,1],
+                     y = bac.umap$layout[,2])
+
+umap_df = merge(umap_df, umap_key, by=0)
+
+ggplot(umap_df, aes(x, y, colour = Treatment))+
+  geom_point()
+```
+
+Week 3 Analysis: 
+1) Permanova
+2) Ad Hoc Pairwise Analysis
+3) Beta-Dispersion
+
+```{r}
+bacteria_time3 = subset(bacteria_tx, select = c(`X126`, `X127`, `X128`, `X129`, `X130`, `X131`, `X132`, `X133`, `X134`, 
+                                             `X135`, `X136`, `X137`, `X138`, `X139`, `X140`, `X141`,`X142`,`X143`,`X144`,
+                                             `X145`,`X147`,`X148`,`X150`,`X151`,`X152`,`X153`,`X154`,`X155`,
+                                             `X156`,`X157`,`X158`,`X159`,`X160`,`X161`,`X162`,`X163`,`X164`, `X165`, `X166`))
+
+sequencingkey_time3=new_sequecingkey %>%
+  filter(Time == 3)
+
+#transposing and making it a matrix
+bact_m_time3 = as.matrix(t(bacteria_time3))
+bact_dist_time3 = vegdist(bact_m_time3, method = 'euclidian')
+
+#1) Permanova
+bact_perm_time3=adonis2(bact_dist_time3~Treatment, data = sequencingkey_time3, permutations = 9999, method = 'euclidian')
+bact_perm_time3
+
+#2) Ad Hoc Pairwise Analysis
+pairwise_bac_time3 = pairwise.adonis2(bact_dist_time3~Treatment, data = sequencingkey_time3, permutations = 9999, method = 'euclidian')
+pairwise_bac_time3
+
+#3) Beta-dispersion: Distance from centroid of Group
+#Calculating Beta-dispersion Distance from centroiod of Group)
+bact_betadist_treat3 = betadisper(bact_dist_time3, group = sequencingkey_time3$Treatment)
+distances_microbe_treat3 = data.frame(bact_betadist_treat3[['distances']])
+distances_microbe_treat3 = cbind(distances_microbe_treat3, group = sequencingkey_time3$Treatment)
+colnames(distances_microbe_treat3) = c('Distance_to_Centroid', 'Treatment')
+#head(distances_microbe_treat3)
+
+#Permutation test for homogeneity of Multivariate dispesions
+test_bact_betadist_treatment3 = permutest(bact_betadist_treat3)
+test_bact_betadist_treatment3
+
+#Graphing Beta dispersions
+B_Treat3 <- ggboxplot(data = distances_microbe_treat3, x = "Treatment", y = "Distance_to_Centroid" ) +
+theme_classic() +
+geom_point()
+B_Treat3
+
+umap_analysis = data.frame(t(bacteria_time3))
+umap_analysis
+
+bac.umap = umap(umap_analysis)
+umap_df = data.frame(x = bac.umap$layout[,1],
+                     y = bac.umap$layout[,2])
+
+umap_df = merge(umap_df, umap_key, by=0)
+
+ggplot(umap_df, aes(x, y, colour = Treatment))+
+  geom_point()
+```
+
+Week 4 Analysis: 
+1) Permanova
+2) Ad Hoc Pairwise Analysis
+3) Beta-Dispersion
+
+```{r}
+bacteria_time4 = subset(bacteria_tx, select = c(`X167`, `X168`, `X169`, `X170`, `X171`, `X172`, `X173`, `X174`, `X175`, 
+                                             `X176`, `X177`, `X178`, `X180`, `X181`, `X182`, `X183`,`X184`,`X185`,`X186`,
+                                             `X187`,`X188`,`X189`,`X190`,`X191`,`X192`,`X193`,`X195`,`X196`,
+                                             `X197`,`X198`,`X199`,`X201`,`X202`,`X203`,`X204`,`X205`,`X206`, `X207`))
+
+sequencingkey_time4=new_sequecingkey %>%
+  filter(Time == 4)
+
+#transposing and making it a matrix
+bact_m_time4 = as.matrix(t(bacteria_time4))
+bact_dist_time4 = vegdist(bact_m_time4, method = 'euclidian')
+
+#1) Permanova
+bact_perm_time4=adonis2(bact_dist_time4~Treatment, data = sequencingkey_time4, permutations = 9999, method = 'euclidian')
+bact_perm_time4
+
+#2) Ad Hoc Pairwise Analysis
+pairwise_bac_time4 = pairwise.adonis2(bact_dist_time4~Treatment, data = sequencingkey_time4, permutations = 9999, method = 'euclidian')
+pairwise_bac_time4
+
+#3) Beta-dispersion: Distance from centroid of Group
+#Calculating Beta-dispersion Distance from centroiod of Group)
+bact_betadist_treat4 = betadisper(bact_dist_time4, group = sequencingkey_time4$Treatment)
+distances_microbe_treat4 = data.frame(bact_betadist_treat4[['distances']])
+distances_microbe_treat4 = cbind(distances_microbe_treat4, group = sequencingkey_time4$Treatment)
+colnames(distances_microbe_treat4) = c('Distance_to_Centroid', 'Treatment')
+#head(distances_microbe_treat4)
+
+#Permutation test for homogeneity of Multivariate dispesions
+test_bact_betadist_treatment4 = permutest(bact_betadist_treat4)
+test_bact_betadist_treatment4
+
+#Graphing Beta dispersions
+B_Treat4 <- ggboxplot(data = distances_microbe_treat4, x = "Treatment", y = "Distance_to_Centroid" ) +
+theme_classic() +
+geom_point()
+B_Treat4
+
+#UMAP
+umap_analysis = data.frame(t(bacteria_time4))
+umap_analysis
+
+bac.umap = umap(umap_analysis)
+umap_df = data.frame(x = bac.umap$layout[,1],
+                     y = bac.umap$layout[,2])
+
+umap_df = merge(umap_df, umap_key, by=0)
+
+ggplot(umap_df, aes(x, y, colour = Treatment))+
+  geom_point()
+
+```
+
+Week 5 Analysis: 
+1) Permanova
+2) Ad Hoc Pairwise Analysis
+3) Beta-Dispersion
+
+```{r}
+bacteria_time5 = subset(bacteria_tx, select = c(`X208`, `X209`, `X210`, `X211`, `X212`, `X213`, `X214`, `X215`, `X216`, 
+                                             `X217`, `X218`, `X219`, `X220`, `X221`, `X222`, `X223`,`X224`,`X225`,`X226`,
+                                             `X227`,`X228`,`X229`,`X230`,`X231`,`X232`,`X233`,`X234`,`X235`,
+                                             `X236`,`X237`,`X238`,`X239`,`X240`,`X241`,`X247`,`X243`,`X244`, `X245`, `X246`))
+
+bacteria_time5
+#Sequencing key containing only time = 5
+sequencingkey_time5=new_sequecingkey %>%
+  filter(Time == 5)
+
+#transposing and making it a matrix
+bact_m_time5 = as.matrix(t(bacteria_time5))
+bact_dist_time5 = vegdist(bact_m_time5, method = 'euclidian')
+
+#1) Permanova 
+bact_perm_time5=adonis2(bact_dist_time5~Treatment, data = sequencingkey_time5, permutations = 9999, method = 'euclidian')
+bact_perm_time5
+
+#2) Ad Hoc Pairwise Analysis
+pairwise_bac_time5 = pairwise.adonis2(bact_dist_time5~Treatment, data = sequencingkey_time5, permutations = 9999, method = 'euclidian')
+pairwise_bac_time5
+
+#3) Beta-dispersion: Distance from centroid of Group
+#Calculating Beta-dispersion Distance from centroiod of Group)
+bact_betadist_treat5 = betadisper(bact_dist_time5, group = sequencingkey_time5$Treatment)
+distances_microbe_treat5 = data.frame(bact_betadist_treat5[['distances']])
+distances_microbe_treat5 = cbind(distances_microbe_treat5, group = sequencingkey_time5$Treatment)
+colnames(distances_microbe_treat5) = c('Distance_to_Centroid', 'Treatment')
+#head(distances_microbe_treat5)
+
+#Permutation test for homogeneity of Multivariate dispesions
+test_bact_betadist_treatment5 = permutest(bact_betadist_treat5)
+test_bact_betadist_treatment5
+
+#Graphing Beta dispersions
+B_Treat5 <- ggboxplot(data = distances_microbe_treat5, x = "Treatment", y = "Distance_to_Centroid" ) +
+theme_classic() +
+geom_point()
+B_Treat5
+
+umap_analysis = data.frame(t(bacteria_time5))
+umap_analysis
+
+bac.umap = umap(umap_analysis)
+umap_df = data.frame(x = bac.umap$layout[,1],
+                     y = bac.umap$layout[,2])
+
+umap_df = merge(umap_df, umap_key, by=0)
+
+ggplot(umap_df, aes(x, y, colour = Treatment))+
+  geom_point()
+```
+
+Taxa Clean Up
+
+```{r} 
+#Subsetting only Important bacteria from Random forest
+bacteria_new = subset(bacteria_new, select = c(names_rf))
+bacteria_new
+#Merging Sequencing key for Identification
+bacteria_new = merge(bacteria_new, new_sequecingkey1, by=0)
+
+#Dropping Incomplete Mouse ID
+bacteria_new=bacteria_new %>%
+  filter(Actual.Contents != 104)
+bacteria_new=bacteria_new %>%
+  filter(Actual.Contents != 111)
+bacteria_new=bacteria_new %>%
+  filter(Actual.Contents != 112)
+bacteria_new=bacteria_new %>%
+  filter(Actual.Contents != 116)
+bacteria_new=bacteria_new %>%
+  filter(Actual.Contents != 119)
+bacteria_new=bacteria_new %>%
+  filter(Actual.Contents != 122)
+bacteria_new=bacteria_new %>%
+  filter(Actual.Contents != 125)
+bacteria_new=bacteria_new %>%
+  filter(Actual.Contents != 132)
+bacteria_new=bacteria_new %>%
+  filter(Actual.Contents != 134)
+
+#Removing Unnecessary level left in DF
+bacteria_new$Actual.Contents = droplevels(bacteria_new$Actual.Contents)
+bacteria_new$Time = droplevels(bacteria_new$Time)
+bacteria_new$Treatment = droplevels(bacteria_new$Treatment)
+
+#Setting Bacteria_new as genus for use in diff taxa analysis
+genus_data <- bacteria_new
+genus_data = data.frame(genus_data, row.names = 1)
+
+genus_data
+
+
+#Subsetting only genus level classsifications for differential taxa analysis
+# = subset(clr_data, select = c(`Row.names`,`X.g__AF12`,`X.g__Adlercreutzia`,`X.g__Akkermansia`,`X.g__Alistipes`,`X.g__Allobaculum`,`X.g__Anaeroplasma`,`X.g__Anaerostipes`,
+                                         #`X.g__Anaerovorax`,`X.g__Bacillus`,`X.g__Bacteroides`,`X.g__Bifidobacterium`,`X.g__Bilophila`,`X.g__Butyricicoccus`,`X.g__Butyrivibrio`,
+                                         #`X.g__Candidatus.Arthromitus`,`X.g__Clostridium`,`X.g__Coprobacillus`,`X.g__Coprococcus`,`X.g__Dehalobacterium`,`X.g__Desulfovibrio`,`X.g__Dorea`,
+                                         #`X.g__Enterococcus`,`X.g__Lachnospira`,`X.g__Lactobacillus`,`X.g__Listeria`,`X.g__Mucispirillum`, #`X.g__Odoribacter`, `X.g__Oscillospira`, `X.g__Parabacteroides`, `X.g__Pediococcus`,`X.g__Prevotella`, `X.g__Pseudomonas`, `X.g__Roseburia`, `X.g__Ruminococcus`, `X.g__Shigella`, `X.g__Staphylococcus`, `X.g__Sutterella`, `X.g__Turicibacter`, `Actual.Contents`,`Time`, `Treatment`))
+
+#Removing X. from column headers
+#names(genus_data) = gsub(pattern = "X.", replacement = "", x = names(genus_data))
+
+#Removing g__ which represents genus level
+#names(genus_data) = gsub(pattern = "g__", replacement = "", x = names(genus_data))
+
+#Renaming Certain bacteria
+#names(genus_data) = gsub(pattern = "Candidatus.Arthromitus", replacement = "Candidatus_Arthromitus", x = names(genus_data))
+
+#converting Sample ID to row names
+#genus_data = data.frame(genus_data, row.names = 1)
+
+#genus_data
+```
+
+Differential Taxa Analysis
+
+```{r}
+n_features <- 50
+H_null <- 'Time'
+H_alt <- 'Treatment + Time'
+rand <- 'Actual.Contents'
+
+results <- data.frame(feature = character(),
+                      main_p_value = double(),
+                      Lowest_AIC = logical(),
+                      Sig_to_H0 = logical(),
+                      main_Slope = double(),
+                      Normal_Dist = logical(),
+                      Equal_var = logical(),
+                      OVXDHT_OVXP_P = double(),     # you will need a column for each 
+                      OVXDHT_SHAMDHT_P = double(),   # categorical variable for both the 
+                      OVXDHT_SHAMP_P = double(),   # here, there are 3 levels within the
+                      OVXP_SHAMDHT_P = double(),        # you will need to change it below as
+                      OVXP_SHAMP_P = double(),
+                      SHAMDHT_SHAMP_P = double(),
+                      stringsAsFactors = FALSE)
+
+for (i in 1:n_features){
+  
+  feature = colnames(genus_data[i])
+  #print(feature)
+  fixed.null <- formula(paste(feature,'~',H_null))
+  fixed.alt <- formula(paste(feature,'~',H_alt))
+  rando.form <- formula(paste('~1|', rand, sep=''))
+  
+  tryCatch(
+        # TRY BLOCK
+        { 
+            # fitting the linear mixed effects model
+            # null model
+            {null_model <- lme(data = genus_data,
+                      fixed = fixed.null,
+                      random = rando.form,
+                      na.action=na.omit,
+                      method='ML')}
+            
+            {alt_model <- lme(data = genus_data,
+                     fixed = fixed.alt,
+                     random = rando.form,
+                     na.action=na.omit,
+                     method='ML')}
+        },
+        # ERROR BLOCK
+        error=function(e) {
+            null_model <- NULL
+            alt_model <- NULL
+       })
+ 
+        
+  if(!is.null(alt_model)){
+        # compare LMMs and get T/F lowest AIC 
+        comparison <- anova(null_model, alt_model)
+        #Checks if alt model is a lower AIC means its a better model
+        Lowest_AIC <- (which.min(comparison$AIC) == 2) 
+        #Checks p-value of alt model
+        null_comp <- (comparison[2,9] <= 0.05)
+        
+        # get p-values from ANOVA type 2
+        #Split total variation of dependent vaiables into different sources of variation
+        #Allows us to find out whether independent variable have significant effect on dependent variable
+        test <- car::Anova(alt_model, type = 2)
+        main_p_val <- test[1,3]
+        
+        # get coefficients
+        main_slope <- coef(alt_model)[1,2]
+        
+        # normality assessment
+        normal <- (shapiro.test(resid(alt_model))$p.value > 0.05)
+    
+        # homogeneity of variance, H0: equal
+        # https://ademos.people.uic.edu/Chapter18.html#62_assumption_2_homogeneity_of_variance
+        genus_data$sq.resid <- abs(resid(alt_model))^2
+        levene <- lm(sq.resid ~ Treatment, data = genus_data)
+        #Getting p-Value: IF greater than 0.05 variance of the residuals is equal (assumption of homoscedasticity is met)
+        equal_var <- (anova(levene)[1,5] > 0.05)
+        
+        # if main p-value is <= 0.05, perform multiple comparisons
+        if(main_p_val<=0.05 & normal==TRUE & equal_var==TRUE){
+            g <- emmeans(alt_model, pairwise ~ Treatment) 
+            s <- summary(g)
+            OVXDHT_OVXP_P = s$contrasts$p.value[1]
+            OVXDHT_SHAMDHT_P = s$contrasts$p.value[2]
+            OVXDHT_SHAMP_P = s$contrasts$p.value[3]
+            OVXP_SHAMDHT_P = s$contrasts$p.value[4]
+            OVXP_SHAMP_P = s$contrasts$p.value[5]
+            SHAMDHT_SHAMP_P = s$contrasts$p.value[6]
+        } else {
+            OVXDHT_OVXP_P = NA
+            OVXDHT_SHAMDHT_P = NA
+            OVXDHT_SHAMP_P = NA
+            OVXP_SHAMDHT_P = NA
+            OVXP_SHAMP_P = NA
+            SHAMDHT_SHAMP_P = NA
+        }
+        
+  }
+  df <- data.frame(feature, main_p_val, Lowest_AIC, null_comp, main_slope, normal, equal_var, OVXDHT_OVXP_P, OVXDHT_SHAMDHT_P,OVXDHT_SHAMP_P, OVXP_SHAMDHT_P, OVXP_SHAMP_P, SHAMDHT_SHAMP_P)           # *** add columns here if needed
+    rownames(df) <- NULL
+    names(df) <- names(results)
+    results = bind_rows(results, df)
+    
+}
+
+
+```
+
+Non-parametric hypothesis testing
+
+```{r}
+ranked_genus = genus_data %>%
+  mutate(across(c(X9d607ec0281187001a9d6e5e22f9561d:f4496608bb586eb4cfd0969841385e32), rank))
+
+
+n_features <- 50
+H_null <- 'Time'
+H_alt <- 'Treatment + Time'
+rand <- 'Actual.Contents'
+
+xformed <- data.frame(feature = character(),
+                      main_p_value = double(),
+                      Lowest_AIC = logical(),
+                      Sig_to_H0 = logical(),
+                      main_Slope = double(),
+                      Normal_Dist = logical(),
+                      Equal_var = logical(),
+                      OVXDHT_OVXP_P = double(),     # you will need a column for each 
+                      OVXDHT_SHAMDHT_P = double(),   # categorical variable for both the 
+                      OVXDHT_SHAMP_P = double(),   # here, there are 3 levels within the
+                      OVXP_SHAMDHT_P = double(),        # you will need to change it below as
+                      OVXP_SHAMP_P = double(),
+                      SHAMDHT_SHAMP_P = double(),
+                      stringsAsFactors = FALSE)
+
+for (i in 1:n_features){
+  
+  feature = colnames(ranked_genus[i])
+  #print(feature)
+  fixed.null <- formula(paste(feature,'~',H_null))
+  fixed.alt <- formula(paste(feature,'~',H_alt))
+  rando.form <- formula(paste('~1|', rand, sep=''))
+  
+  tryCatch(
+        # TRY BLOCK
+        { 
+            # fitting the linear mixed effects model
+            # null model
+            {null_model <- lme(data = ranked_genus,
+                      fixed = fixed.null,
+                      random = rando.form,
+                      na.action=na.omit,
+                      method='ML')}
+            
+            {alt_model <- lme(data = ranked_genus,
+                     fixed = fixed.alt,
+                     random = rando.form,
+                     na.action=na.omit,
+                     method='ML')}
+        },
+        # ERROR BLOCK
+        error=function(e) {
+            null_model <- NULL
+            alt_model <- NULL
+       })
+ 
+        
+  if(!is.null(alt_model)){
+        # compare LMMs and get T/F lowest AIC 
+        comparison <- anova(null_model, alt_model)
+        #Checks if alt model is a lower AIC means its a better model
+        Lowest_AIC <- (which.min(comparison$AIC) == 2) 
+        #Checks p-value of alt model
+        null_comp <- (comparison[2,9] <= 0.05)
+        
+        # get p-values from ANOVA type 2
+        #Split total variation of dependent vaiables into different sources of variation
+        #Allows us to find out whether independent variable have significant effect on dependent variable
+        test <- car::Anova(alt_model, type = 2)
+        main_p_val <- test[1,3]
+        
+        # get coefficients
+        main_slope <- coef(alt_model)[1,2]
+        
+        # normality assessment
+        normal <- (shapiro.test(resid(alt_model))$p.value > 0.05)
+    
+        # homogeneity of variance, H0: equal
+        # https://ademos.people.uic.edu/Chapter18.html#62_assumption_2_homogeneity_of_variance
+        ranked_genus$sq.resid <- abs(resid(alt_model))^2
+        levene <- lm(sq.resid ~ Treatment, data = ranked_genus)
+        #Getting p-Value: IF greater than 0.05 variance of the residuals is equal (assumption of homoscedasticity is met)
+        equal_var <- (anova(levene)[1,5] > 0.05)
+        
+        # if main p-value is <= 0.05, perform multiple comparisons
+        g <- emmeans(alt_model, pairwise ~ Treatment) 
+        s <- summary(g)
+        OVXDHT_OVXP_P = s$contrasts$p.value[1]
+        OVXDHT_SHAMDHT_P = s$contrasts$p.value[2]
+        OVXDHT_SHAMP_P = s$contrasts$p.value[3]
+        OVXP_SHAMDHT_P = s$contrasts$p.value[4]
+        OVXP_SHAMP_P = s$contrasts$p.value[5]
+        SHAMDHT_SHAMP_P = s$contrasts$p.value[6]
+
+        
+  }
+  df1 <- data.frame(feature, main_p_val, Lowest_AIC, null_comp, main_slope, normal, equal_var, OVXDHT_OVXP_P, OVXDHT_SHAMDHT_P,OVXDHT_SHAMP_P, OVXP_SHAMDHT_P, OVXP_SHAMP_P, SHAMDHT_SHAMP_P)           # *** add columns here if needed
+    rownames(df1) <- NULL
+    names(df1) <- names(xformed)
+    xformed = bind_rows(xformed, df1)
+}
+```
+
+
+```{r}
+xformed$feature = gsub("X", "", as.character(xformed$feature))
+xformed = xformed %>%
+  mutate(main_p_value = p.adjust(main_p_value, method = 'fdr'))%>%
+  filter(main_p_value <= 0.05)
+
+xformed = merge(xformed, taxa, by="feature")
+xformed = xformed %>% relocate(Taxon, .before = main_p_value)
+xformed = subset(xformed, select = -Confidence)
+xformed %>% write_csv(paste(lubridate::today(), 'LMM_taxa_table.csv', sep = "_"))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Subsetting features that cannot be modeled using LMM without modification
+
+```{r}
+#Subsetting just non normal features
+non_norm <- results %>% filter(Normal_Dist == FALSE)
+non_norm_key = data.frame(sequencekey, row.names = 1)
+df_non_norm = subset(genus_data, select = non_norm$feature)
+
+
+#Cub root values to normalize data (presevering negative Values)
+#df_non_norm[] = lapply(df_non_norm, function(x) {
+  #if_else(x<0, -1*(abs(x)^(1/3)), x^(1/3))})
+#df_non_norm[] = lapply(df_non_norm, function(x) {
+  #log(x+0.77)})
+df_non_norm = df_non_norm %>%
+  mutate(across(c(X9d607ec0281187001a9d6e5e22f9561d:f4496608bb586eb4cfd0969841385e32), rank))
+df_non_norm
+
+#Merging metadata and dropping unnecessary levels
+df_non_norm = merge(df_non_norm, non_norm_key, by=0)
+df_non_norm$Time = droplevels(df_non_norm$Time)
+df_non_norm$Treatment = droplevels(df_non_norm$Treatment)
+df_non_norm = data.frame(df_non_norm, row.names = 1)
+df_non_norm
+
+#Subsetting unequal variance features
+unequal_vars <- results %>% filter(Equal_var == FALSE)
+df_unequal = subset(genus_data, select = unequal_vars$feature)
+df_unequal = merge(df_unequal, non_norm_key, by=0)
+df_unequal$Time = droplevels(df_unequal$Time)
+df_unequal$Treatment = droplevels(df_unequal$Treatment)
+df_unequal = data.frame(df_unequal, row.names = 1)
+df_unequal
+```
+
+Transformed differential taxa analysis
+
+```{r}
+n_features <- 99
+H_null <- 'Time'
+H_alt <- 'Treatment + Time'
+rand <- 'Actual.Contents'
+
+xformed <- data.frame(feature = character(),
+                      main_p_value = double(),
+                      Lowest_AIC = logical(),
+                      Sig_to_H0 = logical(),
+                      main_Slope = double(),
+                      Normal_Dist = logical(),
+                      Equal_var = logical(),
+                      OVXDHT_OVXP_P = double(),     # you will need a column for each 
+                      OVXDHT_SHAMDHT_P = double(),   # categorical variable for both the 
+                      OVXDHT_SHAMP_P = double(),   # here, there are 3 levels within the
+                      OVXP_SHAMDHT_P = double(),        # you will need to change it below as
+                      OVXP_SHAMP_P = double(),
+                      SHAMDHT_SHAMP_P = double(),
+                      stringsAsFactors = FALSE)
+
+for (i in 1:n_features){
+  
+  feature = colnames(df_non_norm[i])
+  #print(feature)
+  fixed.null <- formula(paste(feature,'~',H_null))
+  fixed.alt <- formula(paste(feature,'~',H_alt))
+  rando.form <- formula(paste('~1|', rand, sep=''))
+  
+  tryCatch(
+        # TRY BLOCK
+        { 
+            # fitting the linear mixed effects model
+            # null model
+            {null_model <- lme(data = df_non_norm,
+                      fixed = fixed.null,
+                      random = rando.form,
+                      na.action=na.omit,
+                      method='ML')}
+            
+            {alt_model <- lme(data = df_non_norm,
+                     fixed = fixed.alt,
+                     random = rando.form,
+                     na.action=na.omit,
+                     method='ML')}
+        },
+        # ERROR BLOCK
+        error=function(e) {
+            null_model <- NULL
+            alt_model <- NULL
+       })
+ 
+        
+  if(!is.null(alt_model)){
+        # compare LMMs and get T/F lowest AIC 
+        comparison <- anova(null_model, alt_model)
+        #Checks if alt model is a lower AIC means its a better model
+        Lowest_AIC <- (which.min(comparison$AIC) == 2) 
+        #Checks p-value of alt model
+        null_comp <- (comparison[2,9] <= 0.05)
+        
+        # get p-values from ANOVA type 2
+        #Split total variation of dependent vaiables into different sources of variation
+        #Allows us to find out whether independent variable have significant effect on dependent variable
+        test <- car::Anova(alt_model, type = 2)
+        main_p_val <- test[1,3]
+        
+        # get coefficients
+        main_slope <- coef(alt_model)[1,2]
+        
+        # normality assessment
+        normal <- (shapiro.test(resid(alt_model))$p.value > 0.05)
+    
+        # homogeneity of variance, H0: equal
+        # https://ademos.people.uic.edu/Chapter18.html#62_assumption_2_homogeneity_of_variance
+        df_non_norm$sq.resid <- abs(resid(alt_model))^2
+        levene <- lm(sq.resid ~ Treatment, data = df_non_norm)
+        #Getting p-Value: IF greater than 0.05 variance of the residuals is equal (assumption of homoscedasticity is met)
+        equal_var <- (anova(levene)[1,5] > 0.05)
+        
+        # if main p-value is <= 0.05, perform multiple comparisons
+        if(main_p_val<=0.05 & normal==TRUE & equal_var==TRUE){
+            g <- emmeans(alt_model, pairwise ~ Treatment) 
+            s <- summary(g)
+            OVXDHT_OVXP_P = s$contrasts$p.value[1]
+            OVXDHT_SHAMDHT_P = s$contrasts$p.value[2]
+            OVXDHT_SHAMP_P = s$contrasts$p.value[3]
+            OVXP_SHAMDHT_P = s$contrasts$p.value[4]
+            OVXP_SHAMP_P = s$contrasts$p.value[5]
+            SHAMDHT_SHAMP_P = s$contrasts$p.value[6]
+        } else {
+            OVXDHT_OVXP_P = NA
+            OVXDHT_SHAMDHT_P = NA
+            OVXDHT_SHAMP_P = NA
+            OVXP_SHAMDHT_P = NA
+            OVXP_SHAMP_P = NA
+            SHAMDHT_SHAMP_P = NA
+        }
+        
+  }
+  df1 <- data.frame(feature, main_p_val, Lowest_AIC, null_comp, main_slope, normal, equal_var, OVXDHT_OVXP_P, OVXDHT_SHAMDHT_P,OVXDHT_SHAMP_P, OVXP_SHAMDHT_P, OVXP_SHAMP_P, SHAMDHT_SHAMP_P)           # *** add columns here if needed
+    rownames(df1) <- NULL
+    names(df1) <- names(xformed)
+    xformed = bind_rows(xformed, df1)
+    
+}
+
+
+```
+
+Joining normal and transformed results
+1) FDR p-adjustment
+2)How to put it in a image???
+
+```{r}
+results = bind_rows(results, xformed)
+
+lmms = results %>%
+  filter(Lowest_AIC==T, Sig_to_H0==T, Normal_Dist==T, Equal_var==T)%>%
+  group_by(feature)%>%
+  filter(main_p_value == min(main_p_value))%>%
+  ungroup()%>%
+  mutate(main_p_value = p.adjust(main_p_value, method = 'fdr'))%>%
+  filter(main_p_value <= 0.05)
+
+lmms = str_replace_all(lmms)
+lmms = data.frame(lmms, row.names = 1)
+
+lmms_W_Tax = merge(lmms, taxa, by=0)
+  
+```
+
+
+Weighted differential taxa analyis
+
+```{r}
+n_features <- 7
+H_null <- 'Time'
+H_alt <- 'Treatment + Time'
+rand <- 'Actual.Contents'
+
+weighted <- data.frame(feature = character(),
+                      main_p_value = double(),
+                      Lowest_AIC = logical(),
+                      Sig_to_H0 = logical(),
+                      main_Slope = double(),
+                      Normal_Dist = logical(),
+                      Equal_var = logical(),
+                      OVXDHT_OVXP_P = double(),     # you will need a column for each 
+                      OVXDHT_SHAMDHT_P = double(),   # categorical variable for both the 
+                      OVXDHT_SHAMP_P = double(),   # here, there are 3 levels within the
+                      OVXP_SHAMDHT_P = double(),        # you will need to change it below as
+                      OVXP_SHAMP_P = double(),
+                      SHAMDHT_SHAMP_P = double(),
+                      stringsAsFactors = FALSE)
+
+for (i in 1:n_features){
+  
+  feature = colnames(df_unequal[i])
+  #print(feature)
+  fixed.null <- formula(paste(feature,'~',H_null))
+  fixed.alt <- formula(paste(feature,'~',H_alt))
+  rando.form <- formula(paste('~1|', rand, sep=''))
+  weight = formula(paste('~I(1/', feature,')'))
+  
+  tryCatch(
+        # TRY BLOCK
+        { 
+            # fitting the linear mixed effects model
+            # null model
+            {null_model <- lme(data = df_unequal,
+                      fixed = fixed.null,
+                      random = rando.form,
+                      na.action=na.omit,
+                      method='ML',
+                      weights = weigt)}
+            
+            {alt_model <- lme(data = df_unequal,
+                     fixed = fixed.alt,
+                     random = rando.form,
+                     na.action=na.omit,
+                     method='ML',
+                     weights = weight)}
+        },
+        # ERROR BLOCK
+        error=function(e) {
+            null_model <- NULL
+            alt_model <- NULL
+       })
+ 
+        
+  if(!is.null(alt_model)){
+        # compare LMMs and get T/F lowest AIC 
+        comparison <- anova(null_model, alt_model)
+        #Checks if alt model is a lower AIC means its a better model
+        Lowest_AIC <- (which.min(comparison$AIC) == 2) 
+        #Checks p-value of alt model
+        null_comp <- (comparison[2,9] <= 0.05)
+        
+        # get p-values from ANOVA type 2
+        #Split total variation of dependent vaiables into different sources of variation
+        #Allows us to find out whether independent variable have significant effect on dependent variable
+        test <- car::Anova(alt_model, type = 2)
+        main_p_val <- test[1,3]
+        
+        # get coefficients
+        main_slope <- coef(alt_model)[1,2]
+        
+        # normality assessment
+        normal <- (shapiro.test(resid(alt_model))$p.value > 0.05)
+    
+        # homogeneity of variance, H0: equal
+        # https://ademos.people.uic.edu/Chapter18.html#62_assumption_2_homogeneity_of_variance
+        df_non_norm$sq.resid <- abs(resid(alt_model))^2
+        levene <- lm(sq.resid ~ Treatment, data = df_non_norm)
+        #Getting p-Value: IF greater than 0.05 variance of the residuals is equal (assumption of homoscedasticity is met)
+        equal_var <- (anova(levene)[1,5] > 0.05)
+        
+        # if main p-value is <= 0.05, perform multiple comparisons
+        if(main_p_val<=0.05 & normal==TRUE & equal_var==TRUE){
+            g <- emmeans(alt_model, pairwise ~ Treatment) 
+            s <- summary(g)
+            OVXDHT_OVXP_P = s$contrasts$p.value[1]
+            OVXDHT_SHAMDHT_P = s$contrasts$p.value[2]
+            OVXDHT_SHAMP_P = s$contrasts$p.value[3]
+            OVXP_SHAMDHT_P = s$contrasts$p.value[4]
+            OVXP_SHAMP_P = s$contrasts$p.value[5]
+            SHAMDHT_SHAMP_P = s$contrasts$p.value[6]
+        } else {
+            OVXDHT_OVXP_P = NA
+            OVXDHT_SHAMDHT_P = NA
+            OVXDHT_SHAMP_P = NA
+            OVXP_SHAMDHT_P = NA
+            OVXP_SHAMP_P = NA
+            SHAMDHT_SHAMP_P = NA
+        }
+        
+  }
+  df2 <- data.frame(feature, main_p_val, Lowest_AIC, null_comp, main_slope, normal, equal_var, OVXDHT_OVXP_P, OVXDHT_SHAMDHT_P,OVXDHT_SHAMP_P, OVXP_SHAMDHT_P, OVXP_SHAMP_P, SHAMDHT_SHAMP_P)           # *** add columns here if needed
+    rownames(df2) <- NULL
+    names(df2) <- names(weighted)
+    weighted = bind_rows(weighted, df2)
+    
+}
+
+```
+
+
+
+
+
+
+
+
+
