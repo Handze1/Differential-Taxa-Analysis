@@ -43,6 +43,8 @@ Alpha Diversity Analysis: Faiths PD
 #Importing Alpha Diversity Data from Qiime2
 alpha <- read_csv("ovexalphadiversity.csv")
 
+
+
 #Unable to normalize data, based on the case of large sample size (n>30), can ignore the distribution of the data and use parametric tests. 
 #http://www.sthda.com/english/wiki/normality-test-in-r#case-of-large-sample-sizes
 
@@ -56,7 +58,7 @@ faith <- ggplot(alpha, aes(x=Treatment, y=faith_pd, fill = Week)) +
   ylab("Faith's Phylogenetic Diversity")+
   ggtitle("Faith's PD by Treatment")
 
-faith
+#faith
 
 ovxdht_faith=alpha %>%
   filter(Treatment == 'OVX + DHT')
@@ -78,7 +80,7 @@ scatt_faith_ovxdht= ggplot(ovxdht_faith, aes(x=Time, y=faith_pd))+
   xlab("Week")+
   ylim(4, 17)+
   ggtitle("OVX+DHT")
-scatt_faith_ovxdht
+#scatt_faith_ovxdht
 
 scatt_even_ovxdht = ggplot(ovxdht_faith, aes(x=Time, y=pielou_evenness))+
   geom_point()+
@@ -88,7 +90,7 @@ scatt_even_ovxdht = ggplot(ovxdht_faith, aes(x=Time, y=pielou_evenness))+
   xlab("Week")+
   ylim(0.92, 0.99)+
   ggtitle("OVX+DHT")
-scatt_even_ovxdht
+#scatt_even_ovxdht
 #ggsave(filename = "scatt_faith_OVXDHT.svg", plot = scatt_faith_ovxdht)
 
 
@@ -102,7 +104,7 @@ scatt_faith_shamdht= ggplot(shamdht_faith, aes(x=Time, y=faith_pd))+
   xlab("Week")+
   ylim(4, 17)+
   ggtitle("SHAM+DHT")
-scatt_faith_shamdht
+#scatt_faith_shamdht
 #ggsave(filename = "scatt_faith_SHAMDHT.svg", plot = scatt_faith_shamdht)
 
 scatt_even_shamdht = ggplot(shamdht_faith, aes(x=Time, y=pielou_evenness))+
@@ -113,7 +115,7 @@ scatt_even_shamdht = ggplot(shamdht_faith, aes(x=Time, y=pielou_evenness))+
   xlab("Week")+
   ylim(0.92, 0.99)+
   ggtitle("SHAM+DHT")
-scatt_even_shamdht
+#scatt_even_shamdht
 
 
 ### OVX + P
@@ -126,7 +128,7 @@ scatt_faith_ovxp= ggplot(ovxp_faith, aes(x=Time, y=faith_pd))+
   xlab("Week")+
   ylim(4, 17)+
   ggtitle("OVX+P")
-scatt_faith_ovxp
+#scatt_faith_ovxp
 
 scatt_even_ovxp = ggplot(ovxp_faith, aes(x=Time, y=pielou_evenness))+
   geom_point()+
@@ -136,7 +138,7 @@ scatt_even_ovxp = ggplot(ovxp_faith, aes(x=Time, y=pielou_evenness))+
   xlab("Week")+
   ylim(0.92, 0.99)+
   ggtitle("OVX+P")
-scatt_even_ovxp
+#scatt_even_ovxp
 #ggsave(filename = "scatt_faith_OVXP.svg", plot = scatt_faith_ovxp)
 
 
@@ -150,7 +152,7 @@ scatt_faith_shamp= ggplot(shamp_faith, aes(x=Time, y=faith_pd))+
   xlab("Week")+
   ylim(4, 17)+
   ggtitle("SHAM+P")
-scatt_faith_shamp
+#scatt_faith_shamp
 
 scatt_even_shamp = ggplot(shamp_faith, aes(x=Time, y=pielou_evenness))+
   geom_point()+
@@ -160,19 +162,21 @@ scatt_even_shamp = ggplot(shamp_faith, aes(x=Time, y=pielou_evenness))+
   xlab("Week")+
   ylim(0.92, 0.99)+
   ggtitle("SHAM+P")
-scatt_even_shamp
+#scatt_even_shamp
 #ggsave(filename = "scatt_faith_SHAMP.svg", plot = scatt_faith_shamp)
 
 alpha_figure = ggpubr::ggarrange(scatt_faith_ovxdht,scatt_faith_ovxp,scatt_faith_shamdht,scatt_faith_shamp, ncol = 2,nrow=2,labels = c("A", "B", "C", "D"))
-alpha_figure
+#alpha_figure
 
 alpha_figure_even = ggpubr::ggarrange(scatt_even_ovxdht,scatt_even_ovxp,scatt_even_shamdht,scatt_even_shamp, ncol = 2,nrow=2,labels = c("A", "B", "C", "D"))
-alpha_figure_even
+#alpha_figure_even
 #ggsave(filename = "scatter_even.svg", plot = alpha_figure_even)
 
 #Linear Mixed model with mice as a random effect
-alt_model <- lme(faith_pd ~ Treatment+Time, random = ~ 1 | Actual.Contents, data = alpha)
-Anova(alt_model, type = "II")
+alt_model <- lme(faith_pd ~ Treatment*Time, random = ~ 1 | Actual.Contents, data = alpha)
+alt_model1 <- lme(pielou_evenness ~ Treatment*Time, random = ~ 1 | Actual.Contents, data = alpha)
+anova(alt_model1)
+
 
 ```
 
@@ -207,16 +211,16 @@ scatt_even = ggplot(alpha, aes(x=Time, y=pielou_evenness))+
   ylab("Evenness")+
   xlab("Week")
   
-ggsave(filename = "scatt_even.svg", plot = scatt_even)
-scatt_even
+#ggsave(filename = "scatt_even.svg", plot = scatt_even)
+#scatt_even
 
 
 
 ###Will have to separate out by treatment to get P-value for figure above
 #Linear Model checking for interactions between treatment, time = No interactions that are significant use type II
-lmm_even = lme(pielou_evenness ~ Treatment+Time, random = ~1| Actual.Contents, data = alpha)
+lmm_even = lme(pielou_evenness ~ Time*Treatment, random = ~1| Actual.Contents, data = alpha)
 summary(lmm_even)
-Anova(lmm_even, type = "II")
+anova(lmm_even)
 
 ```
 
@@ -263,7 +267,7 @@ sequencekey$Actual.Contents = as.factor(sequencekey$Actual.Contents)
 
 #Removing bad samples and controls from the sequencing key
 new_sequecingkey=sequencekey %>%
-  filter(!SampleID == 'X56', !SampleID == 'X57',!SampleID == 'X58',!SampleID == 'X249',!SampleID == 'X250',!SampleID == 'X251', !SampleID == 'X252',!SampleID == 'X253', !SampleID == 'X20', !SampleID == 'X24',!SampleID == 'X27', !SampleID == 'X51',!SampleID == 'X74', !SampleID == 'X149', !SampleID == 'X179', !SampleID == 'X200', !SampleID == 'X242')
+  filter(!SampleID == 'X56', !SampleID == 'X57',!SampleID == 'X58',!SampleID == 'X249',!SampleID == 'X250',!SampleID == 'X251', !SampleID == 'X252',!SampleID == 'X253', !SampleID == 'X20', !SampleID == 'X24', !SampleID == 'X51',!SampleID == 'X74', !SampleID == 'X149', !SampleID == 'X179', !SampleID == 'X200', !SampleID == 'X242')
 
 ```
 
@@ -281,106 +285,12 @@ bacteria_tx = data.frame(t(clr(t(zerofiltOTUa))))
 
 #Removing control Samples/bad samples(Large Percentage of Unknown bacteria)
 #Cannot remove bad/control samples until after CLR transformation: will change the row means and affect the data
-bacteria_tx = subset(bacteria_tx, select = -c(`X56`, `X57`, `X58`, `X249`, `X250`, `X251`, `X252`, `X253`, `X20`, `X24`, `X27`, `X51`, `X74`, `X149`, `X179`, `X200`, `X242`))
+bacteria_tx = subset(bacteria_tx, select = -c(`X56`, `X57`, `X58`, `X249`, `X250`, `X251`, `X252`, `X253`, `X20`, `X24`, `X51`, `X74`, `X149`, `X179`, `X200`, `X242`))
 
 
 bacteria_tx
 #bacteria_new = tibble::rownames_to_column(bacteria_tx, "OTUID")
 
-```
-
-Line Plots of Schaedleri Species
-
-```{r}
-line_plots = data.frame(t(bacteria_tx))
-
-#Selecting only Schaedleri species that are statistically significant
-line_plots = subset(line_plots, select = c(X8a308a269f4a15e0885ddfba3d4c408e, X8ccde3af6976e7fe31372774390a11af
-, ae67c6666749ae89e0b39c620a0c7f21, d2680eca44a23956fabe78a6d85395d8, X2e59f1b99fab85cb63bce2f35a5ca838, X626d5d8df116add83e6b14c60adbc2dc, X64547667c88735701e168289a2a66718
-))
-
-#Merging clr counts with sequencing key
-Seq_key_line = data.frame(new_sequecingkey, row.names = 1)
-line_plots_w_key = merge(line_plots, new_sequecingkey1, by=0)
-line_plots_w_key = data.frame(line_plots_w_key, row.names = 1)
-
-#Calculating mean for each group at each time point
-mean_var = line_plots_w_key %>%
-  group_by(Time, Treatment)%>%
-  summarise(across(everything(), mean))
-mean_var
-
-#Plotting mean vs time point for each Schaedleri Species
-
-
-schaed_1 = ggplot(data = mean_var, aes(x=Time, y=ae67c6666749ae89e0b39c620a0c7f21, group=Treatment))+
-  geom_line(aes(color=Treatment))+
-  geom_point(aes(color=Treatment))+
-  ylim(-1,7.5)+
-  ylab("Average CLR Abundance (M.Schaedleri)")+
-  xlab("Time (Week)")
-schaed_1 %>%
-  ggexport(filename = "schaed1.pdf")
-  
-
-schaed_2 = ggplot(data = mean_var, aes(x=Time, y=d2680eca44a23956fabe78a6d85395d8, group=Treatment))+
-  geom_line(aes(color=Treatment))+
-  geom_point(aes(color=Treatment))+
-  ylim(-1,7.5)+
-  ylab("Average CLR Abundance (M.Schaedleri)")+
-  xlab("Time (Week)")
-schaed_2 %>%
-  ggexport(filename = "schaed2.pdf")
-
-
-schaed_3 = ggplot(data = mean_var, aes(x=Time, y=X8a308a269f4a15e0885ddfba3d4c408e, group=Treatment))+
-  geom_line(aes(color=Treatment))+
-  geom_point(aes(color=Treatment))+
-  ylim(-1,7.5)+
-  ylab("Average CLR Abundance (M.Schaedleri)")+
-  xlab("Time (Week)")
-schaed_3 %>%
-  ggexport(filename = "schaed3.pdf")
-
-schaed_4 = ggplot(data = mean_var, aes(x=Time, y=X8ccde3af6976e7fe31372774390a11af, group=Treatment))+
-  geom_line(aes(color=Treatment))+
-  geom_point(aes(color=Treatment))+
-  ylim(-1,7.5)+
-  ylab("Average CLR Abundance (M.Schaedleri)")+
-  xlab("Time (Week)")
-
-schaed_4 %>%
-  ggexport(filename = "schaed4.pdf")
-
-allobaculum = ggplot(data = mean_var, aes(x=Time, y=X2e59f1b99fab85cb63bce2f35a5ca838, group=Treatment))+
-  geom_line(aes(color=Treatment))+
-  geom_point(aes(color=Treatment))+
-  ylim(-1,7.5)+
-  ylab("Average CLR Abundance (Allobaculum)")+
-  xlab("Time (Week)")
-
-allobaculum %>%
-  ggexport(filename = "allobaculum.pdf")
-
-lactobac_1 = ggplot(data = mean_var, aes(x=Time, y=X626d5d8df116add83e6b14c60adbc2dc, group=Treatment))+
-  geom_line(aes(color=Treatment))+
-  geom_point(aes(color=Treatment))+
-  ylim(-1,7.5)+
-  ylab("Average CLR Abundance (Lactobacillus_1)")+
-  xlab("Time (Week)")
-
-lactobac_1 %>%
-  ggexport(filename = "lactobillus_1.pdf")
-
-lactobac_2 = ggplot(data = mean_var, aes(x=Time, y=X64547667c88735701e168289a2a66718, group=Treatment))+
-  geom_line(aes(color=Treatment))+
-  geom_point(aes(color=Treatment))+
-  ylim(-1,7.5)+
-  ylab("Average CLR Abundance (Lactobacillus_2)")+
-  xlab("Time (Week)")
-
-lactobac_2 %>%
-  ggexport(filename = "lactobacillus_2.pdf")
 ```
 
 Random Forest Feature Selection
@@ -390,7 +300,7 @@ bacteria_new = data.frame(t(bacteria_tx))
 
 #list of time zero sample ID
 time_zero_names = c("X1", "X2", "X3", "X11", "X12", "X13", "X14", "X15", "X16", "X17",
-                    "X18", "X19", "X21", "X22", "X23", "X25", "X26","X28","X29","X30",
+                    "X18", "X19", "X21", "X22", "X23", "X25", "X26","X27", "X28","X29","X30",
                     "X31","X32","X33","X34","X35","X36","X37","X38","X39","X40",
                     "X41","X42","X43","X44","X45","X46","X257")
 
@@ -408,7 +318,7 @@ rf.data
 #RandomForest
 set.seed(42)
 erie.classify <- randomForest(Treatment ~ ., data=rf.data, importance=TRUE, scale=FALSE)
-
+erie.classify
 
 #Creating dataframe of importance 
 impo = data.frame(importance(erie.classify))
@@ -430,7 +340,7 @@ impo.50 = impo.50 %>%
 impo.50
 
 #impo.50 %>% write_csv(paste(lubridate::today(), 'rf_importance.csv', sep = "_"))
-rf_class <- read.csv('2022-09-21_rf_importance.csv')
+rf_class <- read.csv("C:/Users/Alex/Documents/Thesis/Tables(results)/2022-09-21_rf_importance.csv")
 rf_class
 
 #Creating barplot to show descending importance based on OTU
@@ -441,17 +351,168 @@ rf_img = ggplot(data = rf_class, aes(x = reorder(Classification, MeanDecreaseGin
   xlab("OTUs")+
   ylim(0,0.71)
 
+rf_img
 #ggsave(filename = "rf_img.svg", plot = rf_img)
 
 #Selecting top n names for use in differential taxa analysis
 names_rf = impo %>% rownames_to_column() %>% top_n(50, MeanDecreaseGini) %>% pull(rowname)
-names_rf
+#names_rf
 
 
 
 
 
 ```
+
+Line Plots of 6 different classifications
+
+```{r}
+line_plots = data.frame(t(bacteria_tx))
+
+#Selecting only Schaedleri species that are statistically significant
+line_plots = subset(line_plots, select = c(X8a308a269f4a15e0885ddfba3d4c408e, X8a9a536075ca4d38f077c4f22d915770, X9d607ec0281187001a9d6e5e22f9561d
+, X2e59f1b99fab85cb63bce2f35a5ca838, X64547667c88735701e168289a2a66718, X54df10b2c671e1384b096ab492a3c85b,
+X896ff78f6a5e46e65321c4b3c8e0635d, f39682f9eb7628209f54c4fc7276617c, X61f41b7546d47c5a7495d40062c6b1e5,f4496608bb586eb4cfd0969841385e32, ace220b7598137d9dbab272c9644ef45
+))
+
+#Merging clr counts with sequencing key
+Seq_key_line = data.frame(new_sequecingkey, row.names = 1)
+line_plots_w_key = merge(line_plots, new_sequecingkey1, by=0)
+line_plots_w_key = data.frame(line_plots_w_key, row.names = 1)
+
+#Calculating mean for each group at each time point
+mean_var = line_plots_w_key %>%
+  group_by(Time, Treatment)%>%
+  summarise(across(everything(), mean))
+mean_var
+
+#Plotting mean vs time point for each Schaedleri Species
+
+
+s24_7_7 = ggplot(data = mean_var, aes(x=Time, y=X8a9a536075ca4d38f077c4f22d915770, group=Treatment))+
+  geom_line(aes(color=Treatment))+
+  geom_point(aes(color=Treatment))+
+  ylim(-1,7.5)+
+  ylab("Avg CLR Abundance")+
+  xlab("Time (Week)")+
+  ggtitle("f__S24-7_7")
+
+s24_7_7
+  
+
+Lachno_1 = ggplot(data = mean_var, aes(x=Time, y=X9d607ec0281187001a9d6e5e22f9561d, group=Treatment))+
+  geom_line(aes(color=Treatment))+
+  geom_point(aes(color=Treatment))+
+  ylim(-1,7.5)+
+  ylab("Avg CLR Abundance")+
+  xlab("Time (Week)")+
+  ggtitle("f__Lachnospiraceae_1")
+
+Lachno_1
+
+
+schaed_3 = ggplot(data = mean_var, aes(x=Time, y=X8a308a269f4a15e0885ddfba3d4c408e, group=Treatment))+
+  geom_line(aes(color=Treatment))+
+  geom_point(aes(color=Treatment))+
+  ylim(-1,7.5)+
+  ylab("Avg CLR Abundance")+
+  xlab("Time (Week)")+
+  ggtitle("s__Schaedleri_3")
+
+schaed_3 
+
+
+allobaculum = ggplot(data = mean_var, aes(x=Time, y=X2e59f1b99fab85cb63bce2f35a5ca838, group=Treatment))+
+  geom_line(aes(color=Treatment))+
+  geom_point(aes(color=Treatment))+
+  ylim(-1,7.5)+
+  ylab("Avg CLR Abundance")+
+  xlab("Time (Week)")+
+  ggtitle("g__Allobaculum")
+
+allobaculum
+
+
+lactobac_2 = ggplot(data = mean_var, aes(x=Time, y=X64547667c88735701e168289a2a66718, group=Treatment))+
+  geom_line(aes(color=Treatment))+
+  geom_point(aes(color=Treatment))+
+  ylim(-1,7.5)+
+  ylab("Avg CLR Abundance")+
+  xlab("Time (Week)")+
+  ggtitle("g__Lactobacillus_2")
+
+lactobac_2 
+
+riken_2 = ggplot(data = mean_var, aes(x=Time, y=X54df10b2c671e1384b096ab492a3c85b, group=Treatment))+
+  geom_line(aes(color=Treatment))+
+  geom_point(aes(color=Treatment))+
+  ylim(-1,7.5)+
+  ylab("Avg CLR Abundance")+
+  xlab("Time (Week)")+
+  ggtitle("f__Rikenellaceae_2")
+
+
+riken_2
+
+avg_clr = ggpubr::ggarrange(s24_7_7, Lachno_1, schaed_3,allobaculum, 
+lactobac_2, riken_2, ncol = 2,nrow=3,labels = c("A", "B", "C", "D", "E", "F"))
+
+#ggsave(filename = "avg_clr_abu.svg", plot = avg_clr)
+
+```
+
+Line plots after taxa analysis 
+```{r}
+
+##Good for OVX+P
+lacto_2_top = ggplot(data = mean_var, aes(x=Time, y=f39682f9eb7628209f54c4fc7276617c
+, group=Treatment))+
+  geom_line(aes(color=Treatment))+
+  geom_point(aes(color=Treatment))+
+  ylim(-1,7.5)+
+  ylab("Avg CLR Abundance")+
+  xlab("Time (Week)")+
+  ggtitle("Lactobacillus")
+
+lacto_2_top
+
+
+##Good for SHAM+DHT
+Riken_another = ggplot(data = mean_var, aes(x=Time, y=ace220b7598137d9dbab272c9644ef45
+, group=Treatment))+
+  geom_line(aes(color=Treatment))+
+  geom_point(aes(color=Treatment))+
+  ylim(-1,7.5)+
+  ylab("Avg CLR Abundance")+
+  xlab("Time (Week)")+
+  ggtitle("Rikenelleceae")
+
+Riken_another
+
+##Good for OVTDHT group
+s247_f44 = ggplot(data = mean_var, aes(x=Time, y=f4496608bb586eb4cfd0969841385e32
+, group=Treatment))+
+  geom_line(aes(color=Treatment))+
+  geom_point(aes(color=Treatment))+
+  ylim(-1,7.5)+
+  ylab("Avg CLR Abundance")+
+  xlab("Time (Week)")+
+  ggtitle("S24-7")
+
+s247_f44
+
+
+
+
+
+avg_clr_after_taxa_analysis = ggpubr::ggarrange(lacto_2_top, Riken_another, s247_f44, ncol = 1,nrow=3,labels = c("A", "B", "C"))
+
+ggsave(filename = "Other_3_clr_abund.svg", plot = avg_clr_after_taxa_analysis)
+
+
+```
+
+
 
 NMDS Analysis Using Euclidean Distance:
 
@@ -591,16 +652,6 @@ set.seed(42)
 #Permanova:
 bact_dist = vegdist(bact_m, method = 'euclidian')
 
-##Pairwise beta diversity between groups
-#mod = betadisper(bact_dist,group = new_sequecingkey$Treatment)
-#anova(mod)
-#pmod = permutest(mod, permutations = 1, pairwise = TRUE)
-#distMC = with(mod, dist(centroids))
-#dfdistbw = dist2list(distMC)
-#dfdistbw<-dfdistbw%>%unite(comps,col:row,sep='-')
-#barplot(height=dfdistbw$value,names=dfdistbw$comps,
-        #ylab = 'Distance of both groups to eachothers centoriod')
-#plot(mod)
 
 bact_perm_treat = adonis2(bact_dist~Treatment*Time, data = new_sequecingkey, permutations = 999, method = 'euclidian')
 bact_perm_treat
@@ -621,7 +672,7 @@ Beta-Dispersion
 #install_github("pmartinezarbizu/pairwiseAdonis/pairwiseAdonis")
 #time = 0 Permanova
 bacteria_time0 = subset(bacteria_tx, select = c(`X1`, `X2`, `X3`, `X11`, `X12`, `X13`, `X14`, `X15`, `X16`, `X17`, 
-                                             `X18`, `X19`, `X21`, `X22`, `X23`, `X25`, `X26`,`X28`,`X29`,`X30`,
+                                             `X18`, `X19`, `X21`, `X22`, `X23`, `X25`, `X26`,`X27`,`X28`,`X29`,`X30`,
                                              `X31`,`X32`,`X33`,`X34`,`X35`,`X36`,`X37`,`X38`,`X39`,`X40`,
                                              `X41`,`X42`,`X43`,`X44`,`X45`,`X46`,`X257`))
 sequencingkey_time0=new_sequecingkey %>%
@@ -948,45 +999,122 @@ Taxa Clean Up
 
 ```{r}
 #Subsetting only Important bacteria from Random forest
-bacteria_new = subset(bacteria_new, select = c(names_rf))
+bacteria_new1 = subset(bacteria_new, select = c(names_rf))
 
 #Merging Sequencing key for Identification
-bacteria_new = merge(bacteria_new, new_sequecingkey1, by=0)
-bacteria_new
-#Dropping Incomplete Mouse ID
-bacteria_new=bacteria_new %>%
-  filter(Actual.Contents != 104)
-bacteria_new=bacteria_new %>%
-  filter(Actual.Contents != 111)
-bacteria_new=bacteria_new %>%
-  filter(Actual.Contents != 112)
-bacteria_new=bacteria_new %>%
-  filter(Actual.Contents != 116)
-bacteria_new=bacteria_new %>%
-  filter(Actual.Contents != 119)
-bacteria_new=bacteria_new %>%
-  filter(Actual.Contents != 122)
-bacteria_new=bacteria_new %>%
-  filter(Actual.Contents != 125)
-bacteria_new=bacteria_new %>%
-  filter(Actual.Contents != 132)
-bacteria_new=bacteria_new %>%
-  filter(Actual.Contents != 134)
+bacteria_new1 = merge(bacteria_new1, new_sequecingkey1, by=0)
+bacteria_new1
 
 #Removing Unnecessary level left in DF
-bacteria_new$Actual.Contents = droplevels(bacteria_new$Actual.Contents)
-bacteria_new$Time = droplevels(bacteria_new$Time)
-bacteria_new$Treatment = droplevels(bacteria_new$Treatment)
+bacteria_new1$Actual.Contents = droplevels(bacteria_new1$Actual.Contents)
+bacteria_new1$Time = droplevels(bacteria_new1$Time)
+bacteria_new1$Treatment = droplevels(bacteria_new1$Treatment)
 
 #Setting Bacteria_new as genus for use in diff taxa analysis
-genus_data <- bacteria_new
+genus_data <- bacteria_new1
 genus_data = data.frame(genus_data, row.names = 1)
 
 
 genus_data
 ```
 
-Differential Taxa Analysis
+Non-parametric taxa testing
+
+```{r}
+#Ranking the Data:
+ranked_genus = genus_data %>%
+  mutate(across(c(X9d607ec0281187001a9d6e5e22f9561d:f4496608bb586eb4cfd0969841385e32), rank))
+
+#Loop to iterate over taxa for Linear model
+n_features <- 50
+H_null <- 'Time'
+H_alt <- 'Treatment*Time'
+rand <- 'Actual.Contents'
+
+simple_lm <- data.frame(feature = character(),
+                      Time_p = double(),
+                      Treatment_p = logical(),
+                      Inter_time_treatment = logical(),
+                      OVXDHT_OVXP_P = double(),     # you will need a column for each 
+                      OVXDHT_SHAMDHT_P = double(),   # categorical variable for both the 
+                      OVXDHT_SHAMP_P = double(),   # here, there are 3 levels within the
+                      OVXP_SHAMDHT_P = double(),        # you will need to change it below as
+                      OVXP_SHAMP_P = double(),
+                      SHAMDHT_SHAMP_P = double(),
+                      stringsAsFactors = FALSE)
+
+for (i in 1:n_features){
+  
+  feature = colnames(ranked_genus[i])
+  fixed.alt <- formula(paste(feature,'~',H_alt))
+  rando.form <- formula(paste('~1|', rand, sep=''))
+  
+  tryCatch(
+        # TRY BLOCK
+        { 
+            # fitting the linear mixed effects model
+            # alt model
+            {alt_model <- lme(data = ranked_genus,
+                      fixed = fixed.alt,
+                      random = rando.form,
+                      na.action=na.omit,
+                      method='ML')}
+            
+        },
+        # ERROR BLOCK
+        error=function(e) {
+            alt_model <- NULL
+       })
+ 
+        
+  if(!is.null(alt_model)){
+        #Type I ANOVA: Sequential sum of squares (two main factors (time and treatment) are tested in particular order, this type of squares will give different results for unbalanced data)
+        comparison <- anova(alt_model)
+        Time_p = comparison$`p-value`[2] #Time
+        Treatment_p = comparison$`p-value`[3] #Treatment
+        Inter_time_treatment=comparison$`p-value`[4] #Time:treatment interaction
+        
+        # perform multiple comparisons
+        g <- emmeans(alt_model, pairwise ~ Treatment) 
+        s <- summary(g)
+        OVXDHT_OVXP_P = s$contrasts$p.value[1]
+        OVXDHT_SHAMDHT_P = s$contrasts$p.value[2]
+        OVXDHT_SHAMP_P = s$contrasts$p.value[3]
+        OVXP_SHAMDHT_P = s$contrasts$p.value[4]
+        OVXP_SHAMP_P = s$contrasts$p.value[5]
+        SHAMDHT_SHAMP_P = s$contrasts$p.value[6]
+
+        
+  }
+  df2 <- data.frame(feature, Time_p, Treatment_p, Inter_time_treatment, OVXDHT_OVXP_P, OVXDHT_SHAMDHT_P,OVXDHT_SHAMP_P, OVXP_SHAMDHT_P, OVXP_SHAMP_P, SHAMDHT_SHAMP_P)           # *** add columns here if needed
+    rownames(df2) <- NULL
+    names(df2) <- names(simple_lm)
+    simple_lm = bind_rows(simple_lm, df2)
+}
+
+#adding X to feature name because R automatically adds it if number is starting
+simple_lm$feature = gsub("X", "", as.character(simple_lm$feature))
+
+#Merging feature table
+simple_lm = merge(simple_lm, taxa, by="feature")
+simple_lm = simple_lm %>% relocate(Taxon, .before = Time_p)
+simple_lm = subset(simple_lm, select = -Confidence)
+
+
+#FDR correction based on number of runs
+simple_lm = simple_lm %>%
+  mutate(`Time_p` = p.adjust(`Time_p`, method = 'fdr', n=50))%>%
+  mutate(`Treatment_p` = p.adjust(`Treatment_p`, method = 'fdr', n=50))%>%
+  mutate(`Inter_time_treatment` = p.adjust(`Inter_time_treatment`, method = 'fdr', n=50))
+
+#writing to CSV file with data
+simple_lm %>% write_csv(paste(lubridate::today(), 'HandzelTable3.csv', sep = "_"))
+
+```
+
+DID NOT USE CODE BELOW DUE TO NONNORMAL DATA!!
+
+Differential Taxa Analysis for Normally Distributed Data
 
 ```{r}
 n_features <- 50
@@ -1098,16 +1226,14 @@ for (i in 1:n_features){
 
 ```
 
-Non-parametric hypothesis testing
+DID NOT USE Code Below
+
+Taxa analysis if you transformed data and it was normal!
 
 ```{r}
-ranked_genus = genus_data %>%
-  mutate(across(c(X9d607ec0281187001a9d6e5e22f9561d:f4496608bb586eb4cfd0969841385e32), rank))
-
-
 n_features <- 50
 H_null <- 'Time'
-H_alt <- 'Treatment + Time + Weight'
+H_alt <- 'Treatment + Time'
 rand <- 'Actual.Contents'
 
 xformed <- data.frame(feature = character(),
@@ -1214,10 +1340,7 @@ xformed = xformed %>%
 xformed = merge(xformed, taxa, by="feature")
 xformed = xformed %>% relocate(Taxon, .before = main_p_value)
 xformed = subset(xformed, select = -Confidence)
-#xformed %>% write_csv(paste(lubridate::today(), 'LMM_taxa_table_W_Weight.csv', sep = "_"))
+xformed %>% write_csv(paste(lubridate::today(), 'LMM_taxa_table.csv', sep = "_"))
 ```
-
-
-
 
 
