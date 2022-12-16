@@ -48,7 +48,11 @@ alpha <- read_csv("ovexalphadiversity.csv")
 #Unable to normalize data, based on the case of large sample size (n>30), can ignore the distribution of the data and use parametric tests. 
 #http://www.sthda.com/english/wiki/normality-test-in-r#case-of-large-sample-sizes
 
-ggqqplot(alpha, 'faith_pd', facet.by = 'Treatment')
+ggqqplot(alpha, 'faith_pd')
+
+#Normality and Heteroscedasticity check: GOOD
+faith_heter_check <- lm(faith_pd ~ Treatment*Time, data = alpha)
+plot(faith_heter_check)
 
 
 Week = as.factor(alpha$Time)
@@ -187,7 +191,12 @@ Alpha Diversity Analysis: Pielou's Evenness
 #Unable to normalize data, based on the case of large sample size (n>30), can ignore the distribution of the data and use parametric tests. 
 #http://www.sthda.com/english/wiki/normality-test-in-r#case-of-large-sample-sizes
 
-ggqqplot(alpha, 'pielou_evenness', facet.by = 'Treatment')
+ggqqplot(alpha, 'pielou_evenness')
+
+#Normality check and heteroscedasticity check: Good
+even_heter_check <- lm(pielou_evenness ~ Treatment*Time, data = alpha)
+plot(even_heter_check)
+
 
 #BoxPlot Evenness by treatment type with time as a color
 even <- ggplot(alpha, aes(x=Treatment, y=pielou_evenness, fill = Week)) + 
@@ -456,7 +465,7 @@ riken_2
 
 avg_clr = ggpubr::ggarrange(s24_7_7, Lachno_1, schaed_3,allobaculum, 
 lactobac_2, riken_2, ncol = 2,nrow=3,labels = c("A", "B", "C", "D", "E", "F"))
-
+avg_clr
 #ggsave(filename = "avg_clr_abu.svg", plot = avg_clr)
 
 ```
@@ -501,13 +510,19 @@ s247_f44 = ggplot(data = mean_var, aes(x=Time, y=f4496608bb586eb4cfd0969841385e3
 
 s247_f44
 
+empty1 = ggplot()
+empty1
+
+empty2 = ggplot()
+empty2
+
+empty3 = ggplot()
+empty3
 
 
-
-
-avg_clr_after_taxa_analysis = ggpubr::ggarrange(lacto_2_top, Riken_another, s247_f44, ncol = 1,nrow=3,labels = c("A", "B", "C"))
-
-ggsave(filename = "Other_3_clr_abund.svg", plot = avg_clr_after_taxa_analysis)
+avg_clr_after_taxa_analysis = ggpubr::ggarrange(lacto_2_top, empty1, Riken_another, empty2, s247_f44, empty3, ncol = 2,nrow=3,labels = c("A", "", "B", "", "C", ""))
+#avg_clr_after_taxa_analysis
+#ggsave(filename = "new_Other_3_clr_abund.svg", plot = avg_clr_after_taxa_analysis)
 
 
 ```
